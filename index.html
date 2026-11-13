@@ -1,0 +1,2184 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HygieSense — IoT Restroom Hygiene Feedback & Monitoring System</title>
+  <meta name="description" content="Real-time IoT Restroom Hygiene Feedback and Monitoring Dashboard for ESP32 devices connected to Firebase Realtime Database.">
+
+  <!-- Google Fonts: Plus Jakarta Sans & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            slate: {
+              850: '#0f172a',
+              900: '#0b1120',
+              950: '#050811'
+            },
+            clean: {
+              400: '#34d399',
+              500: '#10b981',
+              600: '#059669',
+              900: '#064e3b'
+            },
+            dirty: {
+              400: '#fb7185',
+              500: '#f43f5e',
+              600: '#e11d48',
+              900: '#881337'
+            }
+          },
+          animation: {
+            'pulse-subtle': 'pulseSubtle 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            'radar': 'radarPing 2s cubic-bezier(0, 0, 0.2, 1) infinite',
+          },
+          keyframes: {
+            pulseSubtle: {
+              '0%, 100%': { opacity: '1' },
+              '50%': { opacity: '0.6' }
+            },
+            radarPing: {
+              '75%, 100%': { transform: 'scale(2.2)', opacity: '0' }
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 7px;
+      height: 7px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0b1120;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1e293b;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #334155;
+    }
+
+    /* Ambient Background Glow */
+    .bg-grid-pattern {
+      background-size: 32px 32px;
+      background-image: 
+        linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    }
+
+    /* Glassmorphism Classes */
+    .glass-card {
+      background: rgba(15, 23, 42, 0.72);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.5);
+    }
+    .glass-card-hover {
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .glass-card-hover:hover {
+      border-color: rgba(255, 255, 255, 0.18);
+      box-shadow: 0 16px 36px -8px rgba(0, 0, 0, 0.7), 0 0 20px rgba(16, 185, 129, 0.08);
+      transform: translateY(-2px);
+    }
+
+    /* Neon button glow on press */
+    .btn-clean {
+      background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+      box-shadow: 0 4px 14px 0 rgba(16, 185, 129, 0.35);
+    }
+    .btn-clean:hover {
+      box-shadow: 0 6px 20px 0 rgba(16, 185, 129, 0.5);
+      filter: brightness(1.08);
+    }
+    .btn-clean:active {
+      transform: scale(0.97);
+    }
+
+    .btn-dirty {
+      background: linear-gradient(135deg, #e11d48 0%, #f43f5e 100%);
+      box-shadow: 0 4px 14px 0 rgba(244, 63, 94, 0.35);
+    }
+    .btn-dirty:hover {
+      box-shadow: 0 6px 20px 0 rgba(244, 63, 94, 0.5);
+      filter: brightness(1.08);
+    }
+    .btn-dirty:active {
+      transform: scale(0.97);
+    }
+
+    /* Radial Score Meter */
+    .circle-chart-circle {
+      transition: stroke-dasharray 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+      transform: rotate(-90deg);
+      transform-origin: 50% 50%;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen relative antialiased selection:bg-emerald-500 selection:text-white pb-16">
+
+  <!-- Ambient Light Blobs -->
+  <div class="fixed inset-0 pointer-events-none overflow-hidden z-0">
+    <div class="absolute -top-40 -left-40 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl"></div>
+    <div class="absolute top-1/4 -right-40 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl"></div>
+    <div class="absolute bottom-10 left-1/3 w-[500px] h-[500px] bg-rose-500/5 rounded-full blur-3xl"></div>
+    <div class="absolute inset-0 bg-grid-pattern opacity-60"></div>
+  </div>
+
+  <div class="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4">
+
+    <!-- ========================================================= -->
+    <!-- TOP NAVIGATION BAR                                        -->
+    <!-- ========================================================= -->
+    <header class="glass-card rounded-2xl px-5 py-4 mb-6 flex flex-col md:flex-row items-center justify-between gap-4 border border-slate-800">
+      
+      <!-- Brand & Description -->
+      <div class="flex items-center gap-3.5 w-full md:w-auto">
+        <div class="relative flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-500 to-cyan-400 p-0.5 shadow-lg shadow-emerald-500/20">
+          <div class="w-full h-full bg-slate-900 rounded-[10px] flex items-center justify-center">
+            <!-- Hygiene Sparkle & Sensor Icon -->
+            <svg class="w-6 h-6 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+              <circle cx="12" cy="12" r="3.5" fill="currentColor" fill-opacity="0.3"/>
+            </svg>
+          </div>
+          <!-- Live pulse badge -->
+          <span class="absolute -top-1 -right-1 flex h-3.5 w-3.5">
+            <span class="animate-radar absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500 border-2 border-slate-900"></span>
+          </span>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-xl sm:text-2xl font-extrabold tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">
+              HygieSense
+            </h1>
+            <span class="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+              Threshold: 3
+            </span>
+          </div>
+          <p class="text-xs text-slate-400 flex items-center gap-1.5 mt-0.5">
+            <span>ESP32 Restroom Hygiene Feedback Monitor</span>
+            <span class="text-slate-600">•</span>
+            <span id="headerClock" class="font-mono text-slate-400">--:--:--</span>
+          </p>
+        </div>
+      </div>
+
+      <!-- Live Connectivity & Quick Action Bar -->
+      <div class="flex flex-wrap items-center justify-between md:justify-end gap-2.5 w-full md:w-auto">
+        
+        <!-- Firebase Status Pill -->
+        <div id="connectionPill" class="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-800/80 border border-slate-700/80 text-slate-300 shadow-sm" title="Firebase RTDB Connection">
+          <span class="relative flex h-2.5 w-2.5">
+            <span id="connPulse" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+            <span id="connDot" class="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-400"></span>
+          </span>
+          <span id="connText">Connecting to RTDB...</span>
+        </div>
+
+        <!-- Sound Alert Toggle -->
+        <button id="soundToggleBtn" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800/80 hover:bg-slate-700 border border-slate-700/70 text-slate-200 transition-all" title="Toggle audio chime on button press">
+          <svg id="soundIconOn" class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+          </svg>
+          <svg id="soundIconOff" class="w-4 h-4 text-slate-400 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+          </svg>
+          <span id="soundLabel">Sound On</span>
+        </button>
+
+        <!-- ESP32 Arduino Guide Modal Trigger -->
+        <button id="openEspGuideBtn" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-300 transition-all">
+          <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
+          </svg>
+          <span>ESP32 Code</span>
+        </button>
+
+        <!-- Add Restroom Node Button -->
+        <button id="openAddNodeBtn" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800/80 hover:bg-slate-700 border border-slate-700/70 text-slate-200 transition-all">
+          <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+          </svg>
+          <span>+ Add Restroom</span>
+        </button>
+
+        <!-- Simulator Modal Trigger -->
+        <button id="openSimulatorBtn" class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-md shadow-emerald-900/30 transition-all">
+          <svg class="w-4 h-4 animate-spin-slow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+          <span>Hardware Simulator</span>
+        </button>
+
+      </div>
+    </header>
+
+    <!-- ========================================================= -->
+    <!-- DYNAMIC ALERT & DISPATCH BANNER                           -->
+    <!-- Triggers ONLY when RedCount >= 3 (Threshold: 3)           -->
+    <!-- ========================================================= -->
+    <div id="dynamicServiceBanner" class="hidden mb-6 p-4 rounded-2xl border shadow-xl backdrop-blur-md transition-all duration-300">
+      <div id="bannerContent">
+        <!-- Rendered dynamically by updateServiceBanner() -->
+      </div>
+    </div>
+
+    <!-- ========================================================= -->
+    <!-- EXECUTIVE METRICS ROW (4 KPI CARDS)                      -->
+    <!-- ========================================================= -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+
+      <!-- KPI 1: Overall Hygiene Satisfaction Index (HSI) -->
+      <div class="glass-card glass-card-hover rounded-2xl p-4 sm:p-5 border border-slate-800 relative overflow-hidden">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Overall Hygiene Score</span>
+          <span id="kpiStatusTag" class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
+            Optimal
+          </span>
+        </div>
+        <div class="flex items-baseline gap-2">
+          <span id="kpiOverallScore" class="text-3xl sm:text-4xl font-extrabold tracking-tight text-white font-mono">100%</span>
+          <span id="kpiScoreDelta" class="text-xs text-emerald-400 font-medium">Real-time RTDB</span>
+        </div>
+        <!-- Progress bar indicator -->
+        <div class="w-full bg-slate-800 h-2 rounded-full mt-3 overflow-hidden">
+          <div id="kpiScoreBar" class="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-500 rounded-full" style="width: 100%"></div>
+        </div>
+        <div class="flex justify-between items-center text-[11px] text-slate-400 mt-2 font-mono">
+          <span id="kpiCleanRatio">0 Clean</span>
+          <span id="kpiTotalRatio">0 Total Ratings</span>
+        </div>
+      </div>
+
+      <!-- KPI 2: Total Clean Feedbacks (Green Button Presses) -->
+      <div class="glass-card glass-card-hover rounded-2xl p-4 sm:p-5 border border-slate-800 relative overflow-hidden group">
+        <div class="absolute -right-4 -bottom-4 w-24 h-24 bg-emerald-500/5 rounded-full blur-xl group-hover:bg-emerald-500/10 transition-all"></div>
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Clean Feedbacks</span>
+          <div class="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+        </div>
+        <div class="flex items-baseline gap-2">
+          <span id="kpiTotalClean" class="text-3xl sm:text-4xl font-extrabold tracking-tight text-emerald-400 font-mono">0</span>
+          <span class="text-xs text-slate-400 font-medium">presses</span>
+        </div>
+        <div class="flex items-center gap-1.5 mt-3 text-xs text-slate-300">
+          <span id="kpiCleanPercent" class="font-mono text-emerald-400 font-bold">100%</span>
+          <span class="text-slate-400">of total customer votes</span>
+        </div>
+        <p class="text-[11px] text-slate-400 mt-1">Satisfied user ratings via Green button</p>
+      </div>
+
+      <!-- KPI 3: Total Dirty Feedbacks & Threshold Alerts -->
+      <div class="glass-card glass-card-hover rounded-2xl p-4 sm:p-5 border border-slate-800 relative overflow-hidden group">
+        <div class="absolute -right-4 -bottom-4 w-24 h-24 bg-rose-500/5 rounded-full blur-xl group-hover:bg-rose-500/10 transition-all"></div>
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Dirty Feedbacks</span>
+          <div class="w-7 h-7 rounded-lg bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </div>
+        </div>
+        <div class="flex items-baseline gap-2">
+          <span id="kpiTotalDirty" class="text-3xl sm:text-4xl font-extrabold tracking-tight text-rose-400 font-mono">0</span>
+          <span class="text-xs text-slate-400 font-medium">dirty votes</span>
+        </div>
+        <div class="flex items-center gap-1.5 mt-3 text-xs text-slate-300">
+          <span id="kpiDirtyPercent" class="font-mono text-rose-400 font-bold">0%</span>
+          <span class="text-slate-400">of total votes • Threshold: 3</span>
+        </div>
+        <p class="text-[11px] text-slate-400 mt-1">Reset back to 0 upon cleaning</p>
+      </div>
+
+      <!-- KPI 4: Active Restroom Nodes & Total Traffic -->
+      <div class="glass-card glass-card-hover rounded-2xl p-4 sm:p-5 border border-slate-800 relative overflow-hidden group">
+        <div class="absolute -right-4 -bottom-4 w-24 h-24 bg-cyan-500/5 rounded-full blur-xl group-hover:bg-cyan-500/10 transition-all"></div>
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Restroom Nodes</span>
+          <div class="w-7 h-7 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+            </svg>
+          </div>
+        </div>
+        <div class="flex items-baseline gap-2">
+          <span id="kpiNodeCount" class="text-3xl sm:text-4xl font-extrabold tracking-tight text-white font-mono">0</span>
+          <span class="text-xs text-cyan-400 font-medium">online</span>
+        </div>
+        <div class="flex items-center gap-1.5 mt-3 text-xs text-slate-300">
+          <span id="kpiTotalInteractions" class="font-mono text-white font-bold">0</span>
+          <span class="text-slate-400">total button events logged</span>
+        </div>
+        <p class="text-[11px] text-slate-400 mt-1 font-mono text-cyan-400/80">Firebase RTDB: asia-southeast1</p>
+      </div>
+
+    </div>
+
+    <!-- ========================================================= -->
+    <!-- INTERACTIVE CONTROLS BAR (Search, Filters, Sort, View)    -->
+    <!-- ========================================================= -->
+    <div class="glass-card rounded-2xl p-4 mb-6 border border-slate-800 flex flex-col md:flex-row items-center justify-between gap-4">
+      
+      <!-- Search input -->
+      <div class="relative w-full md:w-72">
+        <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+        </div>
+        <input 
+          type="text" 
+          id="restroomSearchInput" 
+          placeholder="Search restrooms..." 
+          class="w-full pl-10 pr-4 py-2 bg-slate-900/90 border border-slate-700/80 rounded-xl text-xs sm:text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all"
+        >
+      </div>
+
+      <!-- Filter Buttons -->
+      <div class="flex flex-wrap items-center gap-1.5 w-full md:w-auto">
+        <button data-filter="all" class="filter-btn px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 transition-all">
+          All Restrooms (<span id="filterCountAll">0</span>)
+        </button>
+        <button data-filter="attention" class="filter-btn px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800/80 text-slate-400 hover:text-slate-200 border border-slate-700 transition-all">
+          Needs Attention (≥ 3) (<span id="filterCountAttention">0</span>)
+        </button>
+        <button data-filter="dispatched" class="filter-btn px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800/80 text-slate-400 hover:text-slate-200 border border-slate-700 transition-all">
+          Cleaning In Progress (<span id="filterCountDispatched">0</span>)
+        </button>
+        <button data-filter="optimal" class="filter-btn px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800/80 text-slate-400 hover:text-slate-200 border border-slate-700 transition-all">
+          Optimal (&lt; 3) (<span id="filterCountOptimal">0</span>)
+        </button>
+      </div>
+
+      <!-- Sort & Export Actions -->
+      <div class="flex items-center gap-2 w-full md:w-auto justify-end">
+        <label for="sortSelect" class="text-xs text-slate-400 whitespace-nowrap">Sort:</label>
+        <select id="sortSelect" class="bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500">
+          <option value="name">Name (A-Z)</option>
+          <option value="dirtyDesc">Most Dirty Votes</option>
+          <option value="scoreAsc">Lowest Hygiene Score</option>
+          <option value="scoreDesc">Highest Hygiene Score</option>
+          <option value="trafficDesc">Highest Traffic</option>
+        </select>
+
+        <!-- Export CSV Button -->
+        <button id="exportCsvBtn" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition-all" title="Export audit data as CSV">
+          <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          <span class="hidden sm:inline">Export CSV</span>
+        </button>
+      </div>
+
+    </div>
+
+    <!-- ========================================================= -->
+    <!-- RESTROOM CARDS GRID                                       -->
+    <!-- ========================================================= -->
+    <section class="mb-10">
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-2">
+          <h2 class="text-base sm:text-lg font-bold text-white tracking-tight">Active Restroom Monitored Zones</h2>
+          <span id="activeGridCountPill" class="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 font-mono">
+            0 Nodes
+          </span>
+        </div>
+        <p class="text-xs text-slate-400 hidden sm:block">Threshold: 3 Dirty votes triggers service. Pressing Clean resets threshold to 0.</p>
+      </div>
+
+      <!-- Grid Container -->
+      <div id="restroomsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <!-- Loading State Skeleton -->
+        <div class="glass-card rounded-2xl p-6 border border-slate-800 flex flex-col items-center justify-center min-h-[260px] animate-pulse">
+          <div class="w-12 h-12 rounded-full bg-slate-800 mb-4"></div>
+          <div class="h-4 w-32 bg-slate-800 rounded mb-2"></div>
+          <div class="h-3 w-48 bg-slate-800 rounded"></div>
+        </div>
+      </div>
+
+      <!-- Empty State (When search yields no results) -->
+      <div id="emptySearchState" class="hidden glass-card rounded-2xl p-10 text-center border border-slate-800">
+        <svg class="w-12 h-12 text-slate-600 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <h3 class="text-base font-bold text-slate-300">No matching restrooms found</h3>
+        <p class="text-xs text-slate-500 mt-1">Try adjusting your search criteria or add a new restroom node.</p>
+      </div>
+    </section>
+
+    <!-- ========================================================= -->
+    <!-- REAL-TIME ANALYTICS & EVENT FEED SECTION                  -->
+    <!-- ========================================================= -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-10">
+
+      <!-- Left Column: Real-time Clean vs Dirty Comparison Chart (7 cols) -->
+      <div class="lg:col-span-7 glass-card rounded-2xl p-5 border border-slate-800 flex flex-col justify-between">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h3 class="text-sm sm:text-base font-bold text-white tracking-tight">Clean vs. Dirty Comparison</h3>
+            <p class="text-xs text-slate-400">Aggregated feedback breakdown per ESP32 node</p>
+          </div>
+          <span class="text-xs font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+            Live Stream
+          </span>
+        </div>
+        <div class="relative w-full h-64">
+          <canvas id="comparisonChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Right Column: Live Event Stream & Incident Feed (5 cols) -->
+      <div class="lg:col-span-5 glass-card rounded-2xl p-5 border border-slate-800 flex flex-col justify-between">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <span class="relative flex h-2 w-2">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <h3 class="text-sm sm:text-base font-bold text-white tracking-tight">Live Event Feed</h3>
+          </div>
+          <button id="clearFeedBtn" class="text-[11px] text-slate-400 hover:text-slate-200 transition-colors">
+            Clear Feed
+          </button>
+        </div>
+        
+        <p class="text-xs text-slate-400 mb-3">Real-time button press telemetry logs from ESP32 units</p>
+
+        <!-- Scrollable Feed Container -->
+        <div id="liveFeedContainer" class="space-y-2 max-h-56 overflow-y-auto pr-1 text-xs">
+          <div class="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800/80 text-slate-400 flex items-center justify-between">
+            <span>Listening for Firebase Realtime Database events...</span>
+            <span class="font-mono text-[10px] text-slate-500">Live</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ========================================================= -->
+    <!-- JANITORIAL SERVICE LOG & RECENT INCIDENTS AUDIT TABLE      -->
+    <!-- ========================================================= -->
+    <div class="glass-card rounded-2xl p-5 border border-slate-800 mb-10">
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-4">
+        <div>
+          <h3 class="text-sm sm:text-base font-bold text-white tracking-tight">Restroom Facility Status Audit</h3>
+          <p class="text-xs text-slate-400">Complete summary table with threshold status and compliance</p>
+        </div>
+        <div class="text-xs text-slate-400 font-mono">
+          Threshold Limit: 3 Dirty Votes
+        </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs">
+          <thead>
+            <tr class="border-b border-slate-800 text-slate-400 uppercase tracking-wider font-semibold">
+              <th class="pb-3 pl-2">Restroom ID</th>
+              <th class="pb-3 px-3">Hygiene Score</th>
+              <th class="pb-3 px-3 text-emerald-400">Clean (Green)</th>
+              <th class="pb-3 px-3 text-rose-400">Dirty / Threshold</th>
+              <th class="pb-3 px-3">Total Traffic</th>
+              <th class="pb-3 px-3">Current Status</th>
+              <th class="pb-3 pr-2 text-right">Quick Actions</th>
+            </tr>
+          </thead>
+          <tbody id="auditTableBody" class="divide-y divide-slate-800/60 text-slate-300">
+            <tr>
+              <td colspan="7" class="py-6 text-center text-slate-500">Syncing with database...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ========================================================= -->
+    <!-- FOOTER                                                    -->
+    <!-- ========================================================= -->
+    <footer class="text-center text-xs text-slate-400 border-t border-slate-850 pt-6">
+      <div class="flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div class="flex items-center gap-2">
+          <span class="font-bold text-slate-300">HygieSense</span>
+          <span>•</span>
+          <span>IoT Restroom Hygiene Feedback System</span>
+        </div>
+        <div class="font-mono text-slate-400">
+          Firebase RTDB Connected: <span class="text-emerald-400">hygiesense-default-rtdb</span>
+        </div>
+      </div>
+    </footer>
+
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- MODAL 1: HARDWARE SIMULATOR & TEST CONTROLS              -->
+  <!-- ========================================================= -->
+  <div id="simulatorModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm hidden">
+    <div class="glass-card rounded-2xl max-w-lg w-full p-6 border border-slate-700 shadow-2xl relative">
+      <div class="flex items-center justify-between mb-4 pb-3 border-b border-slate-800">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-white">ESP32 Hardware Simulator</h3>
+            <p class="text-xs text-slate-400">Threshold: 3 Dirty votes trigger alert. Clean resets to 0.</p>
+          </div>
+        </div>
+        <button id="closeSimulatorModalBtn" class="text-slate-400 hover:text-white p-1 rounded-lg">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="space-y-4">
+        <!-- Target Restroom Dropdown -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1.5">Select Target Restroom</label>
+          <select id="simTargetRestroom" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-emerald-500 font-mono">
+            <!-- Dynamically populated -->
+          </select>
+        </div>
+
+        <!-- Direct Trigger Buttons -->
+        <div class="grid grid-cols-2 gap-3 pt-2">
+          <button id="simPressCleanBtn" class="btn-clean text-white font-bold py-3 px-4 rounded-xl text-xs sm:text-sm flex items-center justify-center gap-2 transition-all">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+            </svg>
+            <span>Simulate Clean (+1)</span>
+          </button>
+
+          <button id="simPressDirtyBtn" class="btn-dirty text-white font-bold py-3 px-4 rounded-xl text-xs sm:text-sm flex items-center justify-center gap-2 transition-all">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+            <span>Simulate Not Clean (+1)</span>
+          </button>
+        </div>
+
+        <!-- Continuous Auto Demo Mode -->
+        <div class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between">
+          <div>
+            <div class="text-xs font-bold text-white flex items-center gap-2">
+              <span>Auto-Simulation Demo</span>
+              <span id="autoDemoStatusBadge" class="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-400">OFF</span>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-0.5">Emulates random customer button presses every 3-5 seconds</p>
+          </div>
+          <button id="toggleAutoDemoBtn" class="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all">
+            Start Demo
+          </button>
+        </div>
+
+        <!-- Bulk or Reset Actions -->
+        <div class="pt-2 flex items-center justify-between border-t border-slate-800">
+          <button id="simResetSelectedBtn" class="text-xs text-rose-400 hover:text-rose-300 font-semibold flex items-center gap-1.5">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            <span>Reset Counts for Selected</span>
+          </button>
+          <span class="text-[11px] text-slate-400">Updates live in Firebase</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- MODAL 2: ADD RESTROOM NODE MODAL                          -->
+  <!-- ========================================================= -->
+  <div id="addNodeModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm hidden">
+    <div class="glass-card rounded-2xl max-w-md w-full p-6 border border-slate-700 shadow-2xl relative">
+      <div class="flex items-center justify-between mb-4 pb-3 border-b border-slate-800">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
+          <span>Register New Restroom Node</span>
+        </h3>
+        <button id="closeAddNodeModalBtn" class="text-slate-400 hover:text-white p-1">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+
+      <form id="addNodeForm" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Restroom ID (Firebase Key)</label>
+          <input 
+            type="text" 
+            id="newNodeId" 
+            placeholder="e.g. Restroom_2 or Floor_2_East" 
+            required 
+            class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-400 font-mono"
+          >
+          <p class="text-[11px] text-slate-500 mt-1">Must not contain spaces or special characters like . $ # [ ] /</p>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-emerald-400 mb-1">Initial Green Count</label>
+            <input 
+              type="number" 
+              id="newGreenCount" 
+              value="0" 
+              min="0" 
+              class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-400 font-mono"
+            >
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-rose-400 mb-1">Initial Red Count</label>
+            <input 
+              type="number" 
+              id="newRedCount" 
+              value="0" 
+              min="0" 
+              class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-400 font-mono"
+            >
+          </div>
+        </div>
+
+        <div class="pt-2 flex items-center justify-end gap-2">
+          <button type="button" id="cancelAddNodeBtn" class="px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white transition-colors">
+            Cancel
+          </button>
+          <button type="submit" class="px-4 py-2 rounded-xl text-xs font-bold bg-cyan-600 hover:bg-cyan-500 text-white shadow-md shadow-cyan-950 transition-all">
+            Add to Firebase
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- MODAL 3: ESP32 ARDUINO C++ INTEGRATION GUIDE              -->
+  <!-- ========================================================= -->
+  <div id="espGuideModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md hidden">
+    <div class="glass-card rounded-2xl max-w-3xl w-full p-6 border border-slate-700 shadow-2xl relative max-h-[90vh] flex flex-col">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-white">ESP32 Firmware & Wiring Integration</h3>
+            <p class="text-xs text-slate-400">Threshold: 3 Dirty votes triggers service. Green button resets to 0.</p>
+          </div>
+        </div>
+        <button id="closeEspGuideModalBtn" class="text-slate-400 hover:text-white p-1 rounded-lg">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="overflow-y-auto space-y-4 my-4 pr-1 text-xs">
+        <!-- Hardware Wiring Pinout -->
+        <div class="p-3.5 rounded-xl bg-slate-900 border border-slate-800">
+          <h4 class="text-xs font-bold text-indigo-300 mb-2 flex items-center gap-2">
+            <span>⚡ Recommended ESP32 Hardware Pinout</span>
+          </h4>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-slate-300">
+            <div class="p-2 rounded-lg bg-emerald-950/30 border border-emerald-500/30">
+              <span class="font-bold text-emerald-400">Green Button (Clean):</span> GPIO 12 <span class="text-slate-400">(INPUT_PULLUP)</span>
+            </div>
+            <div class="p-2 rounded-lg bg-rose-950/30 border border-rose-500/30">
+              <span class="font-bold text-rose-400">Red Button (Dirty):</span> GPIO 14 <span class="text-slate-400">(INPUT_PULLUP)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Ready to copy Arduino sketch -->
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="text-xs font-semibold text-slate-300">Arduino C++ Sketch (Copy & Flash):</span>
+            <button id="copyArduinoCodeBtn" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] font-mono flex items-center gap-1 transition-all">
+              <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+              </svg>
+              <span id="copyBtnText">Copy Code</span>
+            </button>
+          </div>
+          <pre id="arduinoCodeSnippet" class="p-4 bg-slate-900/90 border border-slate-800 rounded-xl text-slate-300 font-mono text-[11px] leading-relaxed overflow-x-auto select-all">#include &lt;WiFi.h&gt;
+#include &lt;WiFiClientSecure.h&gt;
+#include &lt;HTTPClient.h&gt;
+
+// --- WiFi Credentials ---
+const char* WIFI_SSID     = "YOUR_WIFI_NAME";
+const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
+
+// --- Firebase Realtime Database URL ---
+const char* FIREBASE_HOST = "https://hygiesense-default-rtdb.asia-southeast1.firebasedatabase.app";
+const char* RESTROOM_ID   = "Restroom_1";
+const int   DIRTY_THRESHOLD = 3;
+
+// --- Hardware Pins (Internal Pullup Active LOW) ---
+#define PIN_CLEAN_BTN 12   // Green Button (Clean / Service Complete)
+#define PIN_DIRTY_BTN 14   // Red Button (Dirty feedback)
+#define PIN_LED       2    // Built-in Status LED
+
+int cachedGreen = 0;
+int cachedDirty = 0;
+
+void fetchLatestCounts() {
+  if (WiFi.status() != WL_CONNECTED) return;
+  WiFiClientSecure client;
+  client.setInsecure();
+  HTTPClient https;
+  String url = String(FIREBASE_HOST) + "/" + String(RESTROOM_ID) + ".json";
+  if (https.begin(client, url)) {
+    if (https.GET() == HTTP_CODE_OK) {
+      String body = https.getString();
+      int gIdx = body.indexOf("\"GreenCount\":");
+      if (gIdx != -1) cachedGreen = body.substring(gIdx + 13).toInt();
+      int rIdx = body.indexOf("\"RedCount\":");
+      if (rIdx != -1) cachedDirty = body.substring(rIdx + 11).toInt();
+    }
+    https.end();
+  }
+}
+
+void sendPatch(String json) {
+  if (WiFi.status() != WL_CONNECTED) return;
+  WiFiClientSecure client;
+  client.setInsecure();
+  HTTPClient https;
+  String url = String(FIREBASE_HOST) + "/" + String(RESTROOM_ID) + ".json";
+  if (https.begin(client, url)) {
+    https.addHeader("Content-Type", "application/json");
+    https.PATCH(json);
+    https.end();
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(PIN_CLEAN_BTN, INPUT_PULLUP);
+  pinMode(PIN_DIRTY_BTN, INPUT_PULLUP);
+  pinMode(PIN_LED, OUTPUT);
+
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.print("Connecting WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWiFi Connected! IP: " + WiFi.localIP().toString());
+  fetchLatestCounts();
+}
+
+void loop() {
+  // Green Button (CLEAN) -> Resets Dirty Count to 0 & Sets Optimal
+  if (digitalRead(PIN_CLEAN_BTN) == LOW) {
+    delay(50); // Debounce
+    if (digitalRead(PIN_CLEAN_BTN) == LOW) {
+      fetchLatestCounts();
+      cachedGreen++;
+      cachedDirty = 0; // Strictly reset to 0!
+      Serial.println("Clean Pressed! Dirty counter reset to 0.");
+      String json = "{\"GreenCount\":" + String(cachedGreen) + ",\"RedCount\":0,\"status\":\"optimal\",\"lastCleaned\":{\".sv\":\"timestamp\"},\"lastUpdated\":{\".sv\":\"timestamp\"}}";
+      sendPatch(json);
+      while (digitalRead(PIN_CLEAN_BTN) == LOW) delay(10);
+    }
+  }
+
+  // Red Button (DIRTY / NOT CLEAN) -> Increments towards threshold (3)
+  if (digitalRead(PIN_DIRTY_BTN) == LOW) {
+    delay(50); // Debounce
+    if (digitalRead(PIN_DIRTY_BTN) == LOW) {
+      fetchLatestCounts();
+      cachedDirty++; // Increments from 0 to 1 after Clean!
+      Serial.printf("Dirty Pressed! Count: %d\n", cachedDirty);
+      String status = (cachedDirty >= DIRTY_THRESHOLD) ? "needs_attention" : "optimal";
+      String json = "{\"RedCount\":" + String(cachedDirty) + ",\"status\":\"" + status + "\",\"lastUpdated\":{\".sv\":\"timestamp\"}}";
+      sendPatch(json);
+      while (digitalRead(PIN_DIRTY_BTN) == LOW) delay(10);
+    }
+  }
+  delay(20);
+}</pre>
+        </div>
+      </div>
+
+      <div class="pt-3 border-t border-slate-800 text-right">
+        <button id="closeEspGuideModalBtn2" class="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-white transition-all">
+          Done
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- FLOATING TOAST NOTIFICATIONS                              -->
+  <!-- ========================================================= -->
+  <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
+
+  <!-- ========================================================= -->
+  <!-- FIREBASE REALTIME DATABASE SDK v10 (ES6 MODULE)           -->
+  <!-- ========================================================= -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { 
+      getDatabase, 
+      ref, 
+      onValue, 
+      set, 
+      update, 
+      runTransaction 
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+    // --- System Threshold Configuration ---
+    // Threshold is 3: Alert triggers ONLY when RedCount >= 3!
+    const DIRTY_ALERT_THRESHOLD = 3;
+
+    // --- Firebase Configuration ---
+    const firebaseConfig = {
+      apiKey: "AIzaSyDDRMLAgSrkxtqrK2ZhhGDb2Q-X18c5S4w",
+      databaseURL: "https://hygiesense-default-rtdb.asia-southeast1.firebasedatabase.app"
+    };
+
+    // Initialize Firebase
+    let app, db, rootRef;
+    try {
+      app = initializeApp(firebaseConfig);
+      db = getDatabase(app);
+      rootRef = ref(db, "/");
+    } catch (e) {
+      console.error("Firebase init failed:", e);
+      updateConnectionStatus(false, "Init error");
+    }
+
+    // --- Application State ---
+    let restroomsData = {};
+    let previousDataSnapshot = null;
+    let currentFilter = "all";
+    let currentSearchTerm = "";
+    let currentSort = "name";
+    let soundEnabled = true;
+    let autoDemoInterval = null;
+    let comparisonChartInstance = null;
+    const eventHistory = [];
+
+    // Track dismissed alerts by restroomId -> last dismissed dirty count
+    const dismissedAlerts = new Map();
+
+    // --- Audio Feedback Synthesizer (Native Web Audio API) ---
+    let audioCtx = null;
+    function initAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+
+    function playSound(type) {
+      if (!soundEnabled) return;
+      try {
+        initAudio();
+        const now = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        if (type === "clean") {
+          // Cheerful high two-tone chime
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(587.33, now); // D5
+          osc.frequency.exponentialRampToValueAtTime(880, now + 0.12); // A5
+          gain.gain.setValueAtTime(0.18, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+          osc.start(now);
+          osc.stop(now + 0.35);
+        } else if (type === "dirty") {
+          // Warning low alert chime
+          osc.type = "triangle";
+          osc.frequency.setValueAtTime(440, now); // A4
+          osc.frequency.exponentialRampToValueAtTime(329.63, now + 0.15); // E4
+          gain.gain.setValueAtTime(0.25, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+          osc.start(now);
+          osc.stop(now + 0.45);
+        } else if (type === "dispatch") {
+          // Uplifting completion chime
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(523.25, now); // C5
+          osc.frequency.setValueAtTime(659.25, now + 0.1); // E5
+          osc.frequency.setValueAtTime(783.99, now + 0.2); // G5
+          gain.gain.setValueAtTime(0.18, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+          osc.start(now);
+          osc.stop(now + 0.45);
+        }
+      } catch (err) {
+        console.warn("Audio playback not permitted or unavailable:", err);
+      }
+    }
+
+    // --- DOM Elements ---
+    const connPill = document.getElementById("connectionPill");
+    const connPulse = document.getElementById("connPulse");
+    const connDot = document.getElementById("connDot");
+    const connText = document.getElementById("connText");
+    const headerClock = document.getElementById("headerClock");
+
+    // KPI elements
+    const kpiOverallScore = document.getElementById("kpiOverallScore");
+    const kpiStatusTag = document.getElementById("kpiStatusTag");
+    const kpiScoreBar = document.getElementById("kpiScoreBar");
+    const kpiCleanRatio = document.getElementById("kpiCleanRatio");
+    const kpiTotalRatio = document.getElementById("kpiTotalRatio");
+    const kpiTotalClean = document.getElementById("kpiTotalClean");
+    const kpiCleanPercent = document.getElementById("kpiCleanPercent");
+    const kpiTotalDirty = document.getElementById("kpiTotalDirty");
+    const kpiDirtyPercent = document.getElementById("kpiDirtyPercent");
+    const kpiNodeCount = document.getElementById("kpiNodeCount");
+    const kpiTotalInteractions = document.getElementById("kpiTotalInteractions");
+
+    // Dynamic Service Banner
+    const dynamicServiceBanner = document.getElementById("dynamicServiceBanner");
+    const bannerContent = document.getElementById("bannerContent");
+
+    // Container grids
+    const restroomsGrid = document.getElementById("restroomsGrid");
+    const emptySearchState = document.getElementById("emptySearchState");
+    const auditTableBody = document.getElementById("auditTableBody");
+    const liveFeedContainer = document.getElementById("liveFeedContainer");
+    const activeGridCountPill = document.getElementById("activeGridCountPill");
+
+    // Filter counts
+    const filterCountAll = document.getElementById("filterCountAll");
+    const filterCountAttention = document.getElementById("filterCountAttention");
+    const filterCountDispatched = document.getElementById("filterCountDispatched");
+    const filterCountOptimal = document.getElementById("filterCountOptimal");
+
+    // --- Clock Updater ---
+    function updateClock() {
+      const now = new Date();
+      headerClock.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // --- Connection Status Management ---
+    function updateConnectionStatus(isConnected, message) {
+      if (isConnected) {
+        connPulse.className = "animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75";
+        connDot.className = "relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500";
+        connText.textContent = "RTDB Synchronized";
+        connPill.className = "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 shadow-sm";
+      } else {
+        connPulse.className = "animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75";
+        connDot.className = "relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500";
+        connText.textContent = message || "Disconnected";
+        connPill.className = "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-rose-950/40 border border-rose-500/30 text-rose-300 shadow-sm";
+      }
+    }
+
+    // --- Toast Notifications ---
+    function showToast(title, message, type = "info") {
+      const container = document.getElementById("toastContainer");
+      const toast = document.createElement("div");
+      toast.className = `pointer-events-auto p-3.5 rounded-xl border backdrop-blur-md shadow-2xl flex items-start gap-3 transition-all duration-300 transform translate-y-2 opacity-0 ${
+        type === "clean" ? "bg-slate-900/95 border-emerald-500/40 text-emerald-300 shadow-emerald-950/50" :
+        type === "dirty" ? "bg-slate-900/95 border-rose-500/50 text-rose-300 shadow-rose-950/50" :
+        type === "alert" ? "bg-rose-950/95 border-rose-500 text-white shadow-rose-900/50" :
+        type === "dispatched" ? "bg-slate-900/95 border-amber-500/40 text-amber-300 shadow-amber-950/50" :
+        "bg-slate-900/95 border-slate-700 text-slate-200"
+      }`;
+
+      const iconSvg = type === "clean" ? 
+        `<svg class="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>` :
+        type === "dirty" || type === "alert" ?
+        `<svg class="w-5 h-5 text-rose-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>` :
+        type === "dispatched" ?
+        `<svg class="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>` :
+        `<svg class="w-5 h-5 text-cyan-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`;
+
+      toast.innerHTML = `
+        ${iconSvg}
+        <div class="flex-1">
+          <p class="text-xs font-bold">${title}</p>
+          <p class="text-[11px] text-slate-300 mt-0.5">${message}</p>
+        </div>
+      `;
+
+      container.appendChild(toast);
+      requestAnimationFrame(() => {
+        toast.classList.remove("translate-y-2", "opacity-0");
+      });
+
+      setTimeout(() => {
+        toast.classList.add("opacity-0", "translate-x-4");
+        setTimeout(() => toast.remove(), 300);
+      }, 4000);
+    }
+
+    // --- Firebase Realtime Database Listener ---
+    if (rootRef) {
+      onValue(rootRef, (snapshot) => {
+        const data = snapshot.val();
+        updateConnectionStatus(true);
+
+        if (!data || typeof data !== "object") {
+          restroomsData = {};
+        } else {
+          // Normalize entries
+          const normalized = {};
+          for (const [key, value] of Object.entries(data)) {
+            if (value && typeof value === "object") {
+              const clean = Number(value.GreenCount ?? value.greenCount ?? value.clean ?? value.CleanCount ?? 0);
+              const dirty = Number(value.RedCount ?? value.redCount ?? value.dirty ?? value.DirtyCount ?? 0);
+              
+              // Normalize status based on threshold = 3:
+              let nodeStatus = value.status || "optimal";
+              if (nodeStatus !== "dispatched") {
+                if (dirty >= DIRTY_ALERT_THRESHOLD) {
+                  nodeStatus = "needs_attention";
+                } else {
+                  nodeStatus = "optimal";
+                }
+              }
+
+              normalized[key] = {
+                id: key,
+                greenCount: clean,
+                redCount: dirty,
+                status: nodeStatus,
+                dispatchedAt: value.dispatchedAt || null,
+                lastCleaned: value.lastCleaned || null,
+                lastUpdated: value.lastUpdated || Date.now()
+              };
+            }
+          }
+          restroomsData = normalized;
+        }
+
+        // Detect new incoming events by diffing against previous snapshot
+        detectDiffAndLogEvents(restroomsData, previousDataSnapshot);
+        previousDataSnapshot = JSON.parse(JSON.stringify(restroomsData));
+
+        // Refresh UI components
+        renderDashboard();
+      }, (error) => {
+        console.error("Firebase onValue Error:", error);
+        updateConnectionStatus(false, "Sync Failed");
+        showToast("Connection Alert", "Firebase RTDB synchronization encountered an issue.", "alert");
+      });
+    }
+
+    // --- Detect Real-time Deltas & Log Feed ---
+    function detectDiffAndLogEvents(current, previous) {
+      if (!previous) return; // Initial load
+
+      for (const id in current) {
+        const currNode = current[id];
+        const prevNode = previous[id];
+
+        if (!prevNode) {
+          addEventLog(id, "node_added", `Node initialized (Clean: ${currNode.greenCount}, Dirty: ${currNode.redCount})`);
+          continue;
+        }
+
+        // Clean feedback detected
+        if (currNode.greenCount > prevNode.greenCount) {
+          const delta = currNode.greenCount - prevNode.greenCount;
+          
+          // ALWAYS reset RedCount to 0 whenever clean votes increment
+          // This guarantees that whether cleaned from physical ESP32 or web, RedCount is zeroed immediately!
+          currNode.redCount = 0;
+          currNode.status = "optimal";
+          dismissedAlerts.delete(id);
+
+          if (db) {
+            update(ref(db, `/${id}`), {
+              RedCount: 0,
+              status: "optimal",
+              dispatchedAt: null,
+              lastCleaned: Date.now(),
+              lastUpdated: Date.now()
+            });
+          }
+
+          playSound("clean");
+          addEventLog(id, "sanitized", `Clean verified (+${delta}). Dirty count reset to 0!`);
+          showToast(`Restroom Cleaned: ${id}`, `Service verified. Dirty count reset to 0.`, "clean");
+        }
+
+        // Dirty feedback detected
+        if (currNode.redCount > prevNode.redCount) {
+          const delta = currNode.redCount - prevNode.redCount;
+
+          if (currNode.redCount >= DIRTY_ALERT_THRESHOLD) {
+            // THRESHOLD REACHED / EXCEEDED (>= 3): POPUP ERROR & ALERT!
+            playSound("dirty");
+            addEventLog(id, "dirty", `Dirty threshold reached (${currNode.redCount}/${DIRTY_ALERT_THRESHOLD}) - Sanitation required!`);
+            showToast(`🚨 Hygiene Alert: ${id}`, `Threshold reached (${currNode.redCount}/${DIRTY_ALERT_THRESHOLD} dirty votes). Service required!`, "alert");
+            dismissedAlerts.delete(id);
+          } else {
+            // BELOW THRESHOLD (1 or 2 dirty presses): NO POPUP ERROR!
+            addEventLog(id, "dirty", `Dirty vote recorded (${currNode.redCount}/${DIRTY_ALERT_THRESHOLD}) - Monitoring`);
+          }
+        }
+
+        // Janitor dispatched detected from external device
+        if (currNode.status === "dispatched" && prevNode.status !== "dispatched") {
+          playSound("dispatch");
+          addEventLog(id, "dispatched", `Janitorial staff dispatched to ${id}.`);
+          showToast(`Janitor Dispatched`, `Staff assigned to clean ${id}.`, "dispatched");
+        }
+
+        // Sanitized completion detected
+        if (currNode.redCount === 0 && prevNode.redCount > 0 && currNode.greenCount === prevNode.greenCount) {
+          playSound("dispatch");
+          addEventLog(id, "sanitized", `Restroom reset to clean & optimal status.`);
+          showToast(`Restroom Sanitized`, `${id} marked clean. Alert cleared.`, "clean");
+        }
+      }
+    }
+
+    function addEventLog(restroomId, type, description) {
+      const timestamp = new Date().toLocaleTimeString();
+      eventHistory.unshift({ restroomId, type, description, timestamp });
+      if (eventHistory.length > 50) eventHistory.pop();
+      renderLiveFeed();
+    }
+
+    function renderLiveFeed() {
+      if (eventHistory.length === 0) {
+        liveFeedContainer.innerHTML = `
+          <div class="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800/80 text-slate-400 flex items-center justify-between">
+            <span>Listening for Firebase Realtime Database events...</span>
+            <span class="font-mono text-[10px] text-slate-500">Live</span>
+          </div>
+        `;
+        return;
+      }
+
+      liveFeedContainer.innerHTML = eventHistory.slice(0, 15).map(event => {
+        const isClean = event.type === "clean" || event.type === "sanitized";
+        const isDirty = event.type === "dirty";
+        const isDispatched = event.type === "dispatched";
+
+        const badgeColor = isClean ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" :
+                           isDirty ? "bg-rose-500/20 text-rose-300 border-rose-500/30" :
+                           isDispatched ? "bg-amber-500/20 text-amber-300 border-amber-500/30" :
+                           "bg-slate-800 text-slate-300 border-slate-700";
+
+        return `
+          <div class="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800/80 flex items-center justify-between gap-2 hover:border-slate-700 transition-all">
+            <div class="flex items-center gap-2 overflow-hidden">
+              <span class="text-[10px] font-mono px-1.5 py-0.5 rounded border uppercase font-bold flex-shrink-0 ${badgeColor}">
+                ${event.type.replace('_', ' ')}
+              </span>
+              <span class="font-mono font-semibold text-slate-200 text-xs flex-shrink-0">${event.restroomId}:</span>
+              <span class="text-slate-400 truncate text-[11px]">${event.description}</span>
+            </div>
+            <span class="font-mono text-[10px] text-slate-400 flex-shrink-0">${event.timestamp}</span>
+          </div>
+        `;
+      }).join("");
+    }
+
+    // --- Main Dashboard Render Pipeline ---
+    function renderDashboard() {
+      const nodes = Object.values(restroomsData);
+
+      // 1. Calculate Aggregates based on Threshold = 3
+      let totalClean = 0;
+      let totalDirty = 0;
+      let attentionCount = 0;
+      let dispatchedCount = 0;
+      let optimalCount = 0;
+
+      nodes.forEach(node => {
+        totalClean += node.greenCount;
+        totalDirty += node.redCount;
+
+        if (node.status === "dispatched") {
+          dispatchedCount++;
+        } else if (node.redCount >= DIRTY_ALERT_THRESHOLD) {
+          // Threshold of 3 reached!
+          attentionCount++;
+        } else {
+          optimalCount++;
+        }
+      });
+
+      const totalInteractions = totalClean + totalDirty;
+      
+      // Calculate overall hygiene score:
+      // If no restroom has hit the threshold of 3, score is 100%!
+      // If a restroom hits threshold, score reflects the proportion of clean feedback.
+      let overallScore = 100;
+      if (attentionCount > 0) {
+        overallScore = totalInteractions > 0 ? Math.round((totalClean / totalInteractions) * 100) : 50;
+      } else if (totalDirty > 0) {
+        // Subtle dip for 1 or 2 dirty votes below threshold
+        overallScore = Math.max(85, Math.round((totalClean / (totalClean + totalDirty)) * 100));
+      }
+
+      // 2. Update KPI Elements
+      kpiOverallScore.textContent = `${overallScore}%`;
+      kpiScoreBar.style.width = `${overallScore}%`;
+      kpiTotalClean.textContent = totalClean.toLocaleString();
+      kpiTotalDirty.textContent = totalDirty.toLocaleString();
+      kpiNodeCount.textContent = nodes.length;
+      kpiTotalInteractions.textContent = totalInteractions.toLocaleString();
+
+      kpiCleanRatio.textContent = `${totalClean} Clean`;
+      kpiTotalRatio.textContent = `${totalInteractions} Total Votes`;
+
+      const cleanPercent = totalInteractions > 0 ? Math.round((totalClean / totalInteractions) * 100) : 100;
+      const dirtyPercent = totalInteractions > 0 ? Math.round((totalDirty / totalInteractions) * 100) : 0;
+      kpiCleanPercent.textContent = `${cleanPercent}%`;
+      kpiDirtyPercent.textContent = `${dirtyPercent}%`;
+
+      // KPI Status Tag Styling
+      if (dispatchedCount > 0 && attentionCount === 0) {
+        kpiStatusTag.textContent = "Cleaning In Progress";
+        kpiStatusTag.className = "text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 animate-pulse";
+        kpiScoreBar.className = "h-full bg-gradient-to-r from-amber-500 to-yellow-400 transition-all duration-500 rounded-full";
+      } else if (attentionCount > 0) {
+        kpiStatusTag.textContent = "Threshold Exceeded (≥ 3)";
+        kpiStatusTag.className = "text-[11px] font-bold px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/30 animate-pulse";
+        kpiScoreBar.className = "h-full bg-gradient-to-r from-rose-600 to-rose-400 transition-all duration-500 rounded-full";
+      } else {
+        kpiStatusTag.textContent = "Optimal (< 3)";
+        kpiStatusTag.className = "text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20";
+        kpiScoreBar.className = "h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-500 rounded-full";
+      }
+
+      // Filter counts
+      filterCountAll.textContent = nodes.length;
+      filterCountAttention.textContent = attentionCount;
+      filterCountDispatched.textContent = dispatchedCount;
+      filterCountOptimal.textContent = optimalCount;
+
+      // 3. Dynamic Service Banner (ONLY when RedCount >= 3 or Dispatched)
+      updateServiceBanner(nodes);
+
+      // 4. Filter & Sort Nodes
+      let filteredNodes = nodes.filter(node => {
+        // Search filter
+        const matchSearch = node.id.toLowerCase().includes(currentSearchTerm.toLowerCase());
+        if (!matchSearch) return false;
+
+        // Category filter
+        if (currentFilter === "attention") {
+          return node.redCount >= DIRTY_ALERT_THRESHOLD && node.status !== "dispatched";
+        } else if (currentFilter === "dispatched") {
+          return node.status === "dispatched";
+        } else if (currentFilter === "optimal") {
+          return node.redCount < DIRTY_ALERT_THRESHOLD && node.status !== "dispatched";
+        }
+        return true;
+      });
+
+      // Sort
+      filteredNodes.sort((a, b) => {
+        const totalA = a.greenCount + a.redCount;
+        const scoreA = a.redCount === 0 ? 100 : (totalA > 0 ? (a.greenCount / totalA) * 100 : 100);
+        const totalB = b.greenCount + b.redCount;
+        const scoreB = b.redCount === 0 ? 100 : (totalB > 0 ? (b.greenCount / totalB) * 100 : 100);
+
+        if (currentSort === "dirtyDesc") return b.redCount - a.redCount;
+        if (currentSort === "scoreAsc") return scoreA - scoreB;
+        if (currentSort === "scoreDesc") return scoreB - scoreA;
+        if (currentSort === "trafficDesc") return totalB - totalA;
+        return a.id.localeCompare(b.id);
+      });
+
+      // 5. Render Restroom Cards Grid
+      activeGridCountPill.textContent = `${filteredNodes.length} Displayed`;
+      renderRestroomsGrid(filteredNodes);
+
+      // 6. Render Audit Table
+      renderAuditTable(filteredNodes);
+
+      // 7. Update Chart.js Instance
+      updateCharts(nodes);
+
+      // 8. Update Simulator dropdown options
+      updateSimulatorDropdown(nodes);
+    }
+
+    // --- Dynamic Service Banner Handler ---
+    // Rules: Triggers ONLY when RedCount >= 3 or when Dispatched!
+    function updateServiceBanner(nodes) {
+      // Find active dispatched nodes
+      const dispatchedNodes = nodes.filter(n => n.status === "dispatched");
+      
+      // Find nodes that have REACHED or EXCEEDED the threshold of 3!
+      const alertNodes = nodes.filter(n => {
+        if (n.status === "dispatched") return false;
+        if (n.redCount < DIRTY_ALERT_THRESHOLD) return false; // Below threshold of 3 -> NO banner!
+        const lastDismissed = dismissedAlerts.get(n.id) || 0;
+        return n.redCount > lastDismissed;
+      });
+
+      // State 1: Active Cleaning in Progress (Dispatched)
+      if (dispatchedNodes.length > 0) {
+        dynamicServiceBanner.classList.remove("hidden");
+        dynamicServiceBanner.className = "mb-6 p-4 rounded-2xl bg-gradient-to-r from-amber-950/80 via-slate-900 to-slate-900 border border-amber-500/40 shadow-xl shadow-amber-950/40 backdrop-blur-md";
+
+        const nodeNames = dispatchedNodes.map(n => `<span class="font-mono font-bold text-amber-300">${n.id}</span>`).join(", ");
+
+        bannerContent.innerHTML = `
+          <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+              <div class="flex-shrink-0 w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+                <svg class="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </div>
+              <div>
+                <h4 class="text-sm font-bold text-amber-200 flex items-center gap-2">
+                  <span>Cleaning In Progress</span>
+                  <span class="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono">STAFF ON-SITE</span>
+                </h4>
+                <p class="text-xs text-amber-300/80 mt-0.5">
+                  Janitorial staff dispatched to ${nodeNames}. Pressing the <strong>Clean (Green)</strong> button resets threshold back to 0 and clears alerts.
+                </p>
+              </div>
+            </div>
+            <div class="flex items-center gap-2 w-full sm:w-auto">
+              <button onclick="window.resolveServiceComplete('${dispatchedNodes[0].id}')" class="flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-md shadow-emerald-900/40 flex items-center justify-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+                <span>Verify Cleaned (Reset to 0)</span>
+              </button>
+              <button onclick="window.cancelDispatch('${dispatchedNodes[0].id}')" class="px-3 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-700 transition-all">
+                Cancel
+              </button>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      // State 2: Urgent Alert (Threshold of 3 reached!)
+      if (alertNodes.length > 0) {
+        dynamicServiceBanner.classList.remove("hidden");
+        dynamicServiceBanner.className = "mb-6 p-4 rounded-2xl bg-gradient-to-r from-rose-950/80 via-rose-900/60 to-slate-900 border border-rose-500/40 shadow-xl shadow-rose-950/40 backdrop-blur-md";
+
+        const nodeNames = alertNodes.map(n => `<span class="font-mono font-bold text-rose-200">${n.id} (${n.redCount}/3 dirty votes)</span>`).join(", ");
+
+        bannerContent.innerHTML = `
+          <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+              <div class="flex-shrink-0 w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 animate-pulse">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <div>
+                <h4 class="text-sm font-bold text-rose-200 flex items-center gap-2">
+                  <span>Hygiene Alert: Threshold Exceeded (≥ 3 Dirty Votes)</span>
+                  <span class="text-xs px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 font-mono">PRIORITY 1</span>
+                </h4>
+                <p class="text-xs text-rose-300/80 mt-0.5">
+                  Threshold limit reached for ${nodeNames}. Cleaning is now required. After cleaning, count resets back to 0.
+                </p>
+              </div>
+            </div>
+            <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+              <button onclick="window.recordPress('${alertNodes[0].id}', 'clean')" class="flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-md shadow-emerald-900/40 flex items-center justify-center gap-1.5" title="Verify cleaned and reset dirty threshold count to 0">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+                <span>Verify Cleaned (Reset 0)</span>
+              </button>
+              <button onclick="window.dispatchJanitor('${alertNodes[0].id}')" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white transition-all shadow-md shadow-amber-950/40 flex items-center justify-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                <span>Dispatch Staff</span>
+              </button>
+              <button onclick="window.dismissAlerts()" class="px-3 py-2 rounded-xl text-xs font-semibold text-rose-300 hover:text-white hover:bg-rose-900/40 border border-rose-700/50 transition-all">
+                Dismiss
+              </button>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      // State 3: All Clean & Optimal (< 3)
+      dynamicServiceBanner.classList.add("hidden");
+    }
+
+    // --- Render Restroom Cards Grid ---
+    function renderRestroomsGrid(nodes) {
+      if (nodes.length === 0) {
+        restroomsGrid.innerHTML = "";
+        emptySearchState.classList.remove("hidden");
+        return;
+      }
+      emptySearchState.classList.add("hidden");
+
+      restroomsGrid.innerHTML = nodes.map(node => {
+        const total = node.greenCount + node.redCount;
+        
+        // Hygiene score calculation
+        const score = node.redCount === 0 ? 100 : (node.redCount < DIRTY_ALERT_THRESHOLD ? Math.max(85, Math.round((node.greenCount / total) * 100)) : Math.round((node.greenCount / total) * 100));
+        const cleanPct = total > 0 ? Math.round((node.greenCount / total) * 100) : 100;
+        const dirtyPct = total > 0 ? Math.round((node.redCount / total) * 100) : 0;
+
+        const isDispatched = node.status === "dispatched";
+        const isThresholdReached = node.redCount >= DIRTY_ALERT_THRESHOLD && !isDispatched;
+        const isBelowThreshold = node.redCount < DIRTY_ALERT_THRESHOLD && !isDispatched;
+
+        let statusLabel = "Sanitary / Optimal";
+        let statusBadgeClass = "bg-emerald-500/15 text-emerald-300 border-emerald-500/30";
+
+        if (isDispatched) {
+          statusLabel = "Cleaning in Progress";
+          statusBadgeClass = "bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse";
+        } else if (isThresholdReached) {
+          statusLabel = `Needs Cleaning (${node.redCount}/3)`;
+          statusBadgeClass = "bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse";
+        } else if (node.redCount > 0) {
+          statusLabel = `Monitoring (${node.redCount}/3)`;
+          statusBadgeClass = "bg-cyan-500/15 text-cyan-300 border-cyan-500/30";
+        }
+
+        // SVG Radial Progress math
+        const radius = 34;
+        const circumference = 2 * Math.PI * radius;
+        const strokeDashoffset = circumference - (score / 100) * circumference;
+        const strokeColor = isDispatched ? "#f59e0b" : isThresholdReached ? "#f43f5e" : "#10b981";
+
+        return `
+          <div class="glass-card glass-card-hover rounded-2xl p-5 border border-slate-800 flex flex-col justify-between relative overflow-hidden" data-node-id="${node.id}">
+            
+            <!-- Top Card Header -->
+            <div>
+              <div class="flex items-start justify-between gap-2 mb-3">
+                <div class="flex items-center gap-2.5">
+                  <div class="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700/80 flex items-center justify-center text-slate-200">
+                    <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 class="text-base font-bold text-white tracking-tight font-mono flex items-center gap-1.5">
+                      <span>${node.id}</span>
+                      <span class="inline-block w-2 h-2 rounded-full ${isDispatched ? 'bg-amber-400 animate-ping' : isThresholdReached ? 'bg-rose-500 animate-ping' : 'bg-emerald-400'}" title="ESP32 Telemetry Active"></span>
+                    </h3>
+                    <p class="text-[11px] text-slate-400">ESP32 Station</p>
+                  </div>
+                </div>
+
+                <span class="text-[11px] font-bold px-2 py-0.5 rounded-full border ${statusBadgeClass}">
+                  ${statusLabel}
+                </span>
+              </div>
+
+              <!-- Hygiene Score Dial & Breakdown Row -->
+              <div class="flex items-center justify-between gap-4 py-3 border-y border-slate-800/80 my-3">
+                <!-- SVG Circle Radial Gauge -->
+                <div class="relative w-20 h-20 flex-shrink-0 flex items-center justify-center">
+                  <svg class="w-full h-full" viewBox="0 0 80 80">
+                    <circle cx="40" cy="40" r="${radius}" fill="none" stroke="#1e293b" stroke-width="7" />
+                    <circle 
+                      class="circle-chart-circle" 
+                      cx="40" 
+                      cy="40" 
+                      r="${radius}" 
+                      fill="none" 
+                      stroke="${strokeColor}" 
+                      stroke-width="7" 
+                      stroke-dasharray="${circumference}" 
+                      stroke-dashoffset="${strokeDashoffset}" 
+                      stroke-linecap="round"
+                    />
+                  </svg>
+                  <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
+                    <span class="text-base font-extrabold text-white font-mono leading-none">${score}%</span>
+                    <span class="text-[9px] text-slate-400 uppercase mt-0.5 font-semibold">Hygiene</span>
+                  </div>
+                </div>
+
+                <!-- Clean vs Dirty Meter Stats -->
+                <div class="flex-1 space-y-2">
+                  <div>
+                    <div class="flex justify-between text-[11px] mb-1 font-mono">
+                      <span class="text-emerald-400 font-semibold flex items-center gap-1">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                        Clean
+                      </span>
+                      <span class="text-white font-bold">${node.greenCount}</span>
+                    </div>
+                    <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                      <div class="h-full bg-emerald-500 rounded-full" style="width: ${cleanPct}%"></div>
+                    </div>
+                  </div>
+
+                  <!-- 3-Segment Threshold Visual Meter -->
+                  <div>
+                    <div class="flex justify-between text-[11px] mb-1 font-mono">
+                      <span class="${isThresholdReached ? 'text-rose-400 font-bold' : 'text-slate-400'} flex items-center gap-1">
+                        <span class="w-2 h-2 rounded-full ${node.redCount >= 3 ? 'bg-rose-500 animate-ping' : node.redCount > 0 ? 'bg-amber-400' : 'bg-slate-600'}"></span>
+                        Dirty: ${node.redCount} / 3 threshold
+                      </span>
+                      <span class="${isThresholdReached ? 'text-rose-400 font-bold' : 'text-slate-400'}">
+                        ${isThresholdReached ? 'ALERT (≥3)' : isDispatched ? 'CLEANING' : 'OK (<3)'}
+                      </span>
+                    </div>
+                    
+                    <!-- 3 Segments -->
+                    <div class="grid grid-cols-3 gap-1 h-2">
+                      <div class="rounded-full ${node.redCount >= 1 ? (node.redCount >= 3 ? 'bg-rose-500' : 'bg-amber-400') : 'bg-slate-800'} transition-all"></div>
+                      <div class="rounded-full ${node.redCount >= 2 ? (node.redCount >= 3 ? 'bg-rose-500' : 'bg-amber-400') : 'bg-slate-800'} transition-all"></div>
+                      <div class="rounded-full ${node.redCount >= 3 ? 'bg-rose-500 animate-pulse' : 'bg-slate-800'} transition-all"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Traffic & Service details -->
+              <div class="flex items-center justify-between text-[11px] text-slate-400 font-mono mb-4">
+                <span>Total Traffic: <strong class="text-slate-200">${total}</strong></span>
+                <span class="${isThresholdReached ? 'text-rose-400 font-bold' : 'text-emerald-400/90'} font-medium">
+                  ${isDispatched ? 'Staff Dispatched' : isThresholdReached ? 'Clean Required (≥3)' : 'Optimal (<3)'}
+                </span>
+              </div>
+            </div>
+
+            <!-- Card Interactive Action Buttons -->
+            <div class="space-y-2 pt-1 border-t border-slate-800/80">
+              
+              <!-- Clean vs Dirty Buttons -->
+              <div class="grid grid-cols-2 gap-2">
+                <button 
+                  onclick="window.recordPress('${node.id}', 'clean')"
+                  class="btn-clean text-white font-bold py-2.5 px-3 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm"
+                  title="Press Green button (Cleans restroom & resets dirty threshold back to 0)"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span>${isThresholdReached || isDispatched ? 'Clean (Reset 0)' : '+ Clean'}</span>
+                </button>
+
+                <button 
+                  onclick="window.recordPress('${node.id}', 'dirty')"
+                  class="btn-dirty text-white font-bold py-2.5 px-3 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm"
+                  title="Press Red button (Records Not Clean / Dirty rating - Alert triggers on 3)"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  <span>+ Not Clean</span>
+                </button>
+              </div>
+
+              <!-- Contextual Action Bar -->
+              <div class="flex items-center justify-between pt-1">
+                ${isThresholdReached ? `
+                  <button 
+                    onclick="window.dispatchJanitor('${node.id}')"
+                    class="text-[11px] font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1 transition-colors"
+                  >
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                    <span>Dispatch Janitor</span>
+                  </button>
+                ` : isDispatched ? `
+                  <button 
+                    onclick="window.resolveServiceComplete('${node.id}')"
+                    class="text-[11px] font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors"
+                  >
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    <span>Verify Clean (Reset 0)</span>
+                  </button>
+                ` : `
+                  <button 
+                    onclick="window.markCleaned('${node.id}')"
+                    class="text-[11px] font-semibold text-slate-400 hover:text-cyan-300 flex items-center gap-1 transition-colors"
+                    title="Reset dirty count to 0"
+                  >
+                    <svg class="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    <span>Reset to 0</span>
+                  </button>
+                `}
+
+                <span class="text-[10px] text-slate-400 font-mono">Threshold: 3</span>
+              </div>
+            </div>
+
+          </div>
+        `;
+      }).join("");
+    }
+
+    // --- Render Audit Table ---
+    function renderAuditTable(nodes) {
+      if (nodes.length === 0) {
+        auditTableBody.innerHTML = `<tr><td colspan="7" class="py-4 text-center text-slate-500">No restrooms to display</td></tr>`;
+        return;
+      }
+
+      auditTableBody.innerHTML = nodes.map(node => {
+        const total = node.greenCount + node.redCount;
+        const score = node.redCount === 0 ? 100 : (node.redCount < DIRTY_ALERT_THRESHOLD ? Math.max(85, Math.round((node.greenCount / total) * 100)) : Math.round((node.greenCount / total) * 100));
+        
+        const isDispatched = node.status === "dispatched";
+        const isThresholdReached = node.redCount >= DIRTY_ALERT_THRESHOLD && !isDispatched;
+
+        let statusBadge = `<span class="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-emerald-500/15 text-emerald-300 border-emerald-500/30">Optimal (&lt; 3)</span>`;
+        if (isDispatched) {
+          statusBadge = `<span class="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-amber-500/20 text-amber-300 border-amber-500/30 animate-pulse">Cleaning In Progress</span>`;
+        } else if (isThresholdReached) {
+          statusBadge = `<span class="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-rose-500/20 text-rose-300 border-rose-500/30 animate-pulse">Threshold Hit (≥ 3)</span>`;
+        } else if (node.redCount > 0) {
+          statusBadge = `<span class="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-cyan-500/15 text-cyan-300 border-cyan-500/30">Monitoring (${node.redCount}/3)</span>`;
+        }
+
+        return `
+          <tr class="hover:bg-slate-800/40 transition-colors">
+            <td class="py-3 pl-2 font-mono font-bold text-white flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full ${isDispatched ? 'bg-amber-400 animate-ping' : isThresholdReached ? 'bg-rose-500 animate-ping' : 'bg-emerald-400'}"></span>
+              ${node.id}
+            </td>
+            <td class="py-3 px-3">
+              <span class="font-mono font-bold ${isThresholdReached ? 'text-rose-400' : 'text-emerald-400'}">${score}%</span>
+            </td>
+            <td class="py-3 px-3 font-mono text-emerald-400 font-semibold">${node.greenCount}</td>
+            <td class="py-3 px-3 font-mono ${node.redCount >= 3 ? 'text-rose-400 font-bold' : 'text-slate-300'}">
+              ${node.redCount} <span class="text-slate-500 text-[10px]">/ 3 threshold</span>
+            </td>
+            <td class="py-3 px-3 font-mono text-slate-300">${total}</td>
+            <td class="py-3 px-3">
+              ${statusBadge}
+            </td>
+            <td class="py-3 pr-2 text-right">
+              <div class="inline-flex items-center gap-1">
+                <button 
+                  onclick="window.recordPress('${node.id}', 'clean')"
+                  class="px-2 py-1 rounded bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 font-bold text-[10px]"
+                >
+                  +Clean
+                </button>
+                <button 
+                  onclick="window.recordPress('${node.id}', 'dirty')"
+                  class="px-2 py-1 rounded bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 font-bold text-[10px]"
+                >
+                  +Not Clean
+                </button>
+                ${isThresholdReached ? `
+                  <button 
+                    onclick="window.dispatchJanitor('${node.id}')"
+                    class="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold text-[10px]"
+                  >
+                    Dispatch
+                  </button>
+                ` : isDispatched ? `
+                  <button 
+                    onclick="window.resolveServiceComplete('${node.id}')"
+                    class="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px]"
+                  >
+                    Done
+                  </button>
+                ` : `
+                  <button 
+                    onclick="window.markCleaned('${node.id}')"
+                    class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-[10px]"
+                    title="Reset counts to 0"
+                  >
+                    Reset
+                  </button>
+                `}
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    // --- Chart.js Real-time Bar & Breakdown Update ---
+    function updateCharts(nodes) {
+      const ctx = document.getElementById("comparisonChart");
+      if (!ctx) return;
+
+      const labels = nodes.map(n => n.id);
+      const cleanData = nodes.map(n => n.greenCount);
+      const dirtyData = nodes.map(n => n.redCount);
+
+      if (!comparisonChartInstance) {
+        comparisonChartInstance = new Chart(ctx, {
+          type: "bar",
+          data: {
+            labels: labels,
+            datasets: [
+              {
+                label: "Clean (Green)",
+                data: cleanData,
+                backgroundColor: "rgba(16, 185, 129, 0.85)",
+                borderColor: "#10b981",
+                borderWidth: 1.5,
+                borderRadius: 6,
+                maxBarThickness: 36
+              },
+              {
+                label: "Dirty (Red) [Threshold: 3]",
+                data: dirtyData,
+                backgroundColor: "rgba(244, 63, 94, 0.85)",
+                borderColor: "#f43f5e",
+                borderWidth: 1.5,
+                borderRadius: 6,
+                maxBarThickness: 36
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 400 },
+            plugins: {
+              legend: {
+                position: "top",
+                labels: {
+                  color: "#94a3b8",
+                  font: { family: "'Plus Jakarta Sans', sans-serif", size: 11, weight: 600 },
+                  usePointStyle: true,
+                  pointStyle: "circle"
+                }
+              },
+              tooltip: {
+                backgroundColor: "#0f172a",
+                titleColor: "#f8fafc",
+                bodyColor: "#cbd5e1",
+                borderColor: "#334155",
+                borderWidth: 1,
+                padding: 10,
+                boxPadding: 4,
+                usePointStyle: true
+              }
+            },
+            scales: {
+              x: {
+                grid: { color: "rgba(51, 65, 85, 0.25)" },
+                ticks: { color: "#94a3b8", font: { family: "'JetBrains Mono', monospace", size: 11 } }
+              },
+              y: {
+                beginAtZero: true,
+                grid: { color: "rgba(51, 65, 85, 0.25)" },
+                ticks: { color: "#94a3b8", font: { family: "'JetBrains Mono', monospace", size: 11 }, precision: 0 }
+              }
+            }
+          }
+        });
+      } else {
+        comparisonChartInstance.data.labels = labels;
+        comparisonChartInstance.data.datasets[0].data = cleanData;
+        comparisonChartInstance.data.datasets[1].data = dirtyData;
+        comparisonChartInstance.update();
+      }
+    }
+
+    // --- Firebase Write Operations (Exposed to Window for inline handlers) ---
+    window.recordPress = function(restroomId, type) {
+      if (!db) {
+        showToast("Error", "Firebase not connected", "alert");
+        return;
+      }
+      initAudio();
+
+      const node = restroomsData[restroomId] || {};
+
+      if (type === "clean") {
+        // ALWAYS increment GreenCount and ALWAYS reset RedCount back to 0!
+        playSound("clean");
+        const currentGreen = Number(node.greenCount || 0);
+
+        // Optimistically update local state immediately
+        node.greenCount = currentGreen + 1;
+        node.redCount = 0;
+        node.status = "optimal";
+        dismissedAlerts.delete(restroomId);
+        renderDashboard();
+
+        // Explicitly set RedCount to 0 both directly and via parent update
+        set(ref(db, `/${restroomId}/RedCount`), 0);
+        update(ref(db, `/${restroomId}`), {
+          GreenCount: currentGreen + 1,
+          RedCount: 0, // ALWAYS RESETS DIRTY THRESHOLD BACK TO 0!
+          status: "optimal",
+          dispatchedAt: null,
+          lastCleaned: Date.now(),
+          lastUpdated: Date.now()
+        }).catch(err => {
+          console.error("Clean update failed:", err);
+          showToast("Write Error", err.message, "alert");
+        });
+
+      } else if (type === "dirty") {
+        // Red button / Not Clean pressed:
+        // Always increments from the active synced count (which is 0 after Clean is pressed)
+        const currentDirty = Number(node.redCount || 0);
+        const newDirty = currentDirty + 1;
+        const newStatus = (newDirty >= DIRTY_ALERT_THRESHOLD) ? "needs_attention" : (node.status === "dispatched" ? "dispatched" : "optimal");
+
+        if (newDirty >= DIRTY_ALERT_THRESHOLD) {
+          playSound("dirty");
+          dismissedAlerts.delete(restroomId);
+        }
+
+        // Optimistically update local state immediately
+        node.redCount = newDirty;
+        node.status = newStatus;
+        renderDashboard();
+
+        update(ref(db, `/${restroomId}`), {
+          RedCount: newDirty,
+          status: newStatus,
+          lastUpdated: Date.now()
+        }).catch(err => {
+          console.error("Dirty update failed:", err);
+          showToast("Write Error", err.message, "alert");
+        });
+      }
+    };
+
+    // Dispatch Janitorial Staff (Available when threshold >= 3)
+    window.dispatchJanitor = function(restroomId) {
+      if (!db) return;
+      initAudio();
+      playSound("dispatch");
+
+      update(ref(db, `/${restroomId}`), {
+        status: "dispatched",
+        dispatchedAt: Date.now(),
+        lastUpdated: Date.now()
+      }).then(() => {
+        addEventLog(restroomId, "dispatched", `Janitor dispatched. Awaiting service completion.`);
+        showToast("Janitor Dispatched", `Cleaning staff assigned to ${restroomId}.`, "dispatched");
+      }).catch(err => {
+        showToast("Dispatch Failed", err.message, "alert");
+      });
+    };
+
+    // Cancel Dispatch
+    window.cancelDispatch = function(restroomId) {
+      if (!db) return;
+      const isOverThreshold = (restroomsData[restroomId]?.redCount || 0) >= DIRTY_ALERT_THRESHOLD;
+      update(ref(db, `/${restroomId}`), {
+        status: isOverThreshold ? "needs_attention" : "optimal",
+        dispatchedAt: null,
+        lastUpdated: Date.now()
+      }).then(() => {
+        showToast("Dispatch Cancelled", `Status reverted.`, "info");
+      });
+    };
+
+    // Complete / Verify Service Cleaned: "After cleaning the threshold again comes to 0"
+    window.resolveServiceComplete = function(restroomId) {
+      if (!db) return;
+      initAudio();
+      playSound("dispatch");
+
+      const node = restroomsData[restroomId] || {};
+      const currGreen = Number(node.greenCount || 0);
+
+      // Optimistically update local state
+      node.greenCount = currGreen + 1;
+      node.redCount = 0;
+      node.status = "optimal";
+      dismissedAlerts.delete(restroomId);
+      renderDashboard();
+
+      set(ref(db, `/${restroomId}/RedCount`), 0);
+      update(ref(db, `/${restroomId}`), {
+        GreenCount: currGreen + 1,
+        RedCount: 0, // THRESHOLD RESETS BACK TO 0!
+        status: "optimal",
+        dispatchedAt: null,
+        lastCleaned: Date.now(),
+        lastUpdated: Date.now()
+      }).then(() => {
+        addEventLog(restroomId, "sanitized", `Restroom cleaned! Dirty counter reset from threshold to 0.`);
+        showToast("Service Completed", `${restroomId} sanitized. Dirty count reset back to 0.`, "clean");
+      }).catch(err => {
+        showToast("Update Failed", err.message, "alert");
+      });
+    };
+
+    // Direct Reset Counter Action
+    window.markCleaned = function(restroomId) {
+      if (!db) return;
+      initAudio();
+      playSound("clean");
+
+      const node = restroomsData[restroomId] || {};
+      node.redCount = 0;
+      node.status = "optimal";
+      dismissedAlerts.delete(restroomId);
+      renderDashboard();
+
+      set(ref(db, `/${restroomId}/RedCount`), 0);
+      update(ref(db, `/${restroomId}`), {
+        RedCount: 0, // RESETS TO 0!
+        status: "optimal",
+        dispatchedAt: null,
+        lastCleaned: Date.now(),
+        lastUpdated: Date.now()
+      }).then(() => {
+        addEventLog(restroomId, "sanitized", `Counters reset to 0.`);
+        showToast("Counters Reset", `${restroomId} dirty count reset back to 0.`, "clean");
+      }).catch(err => {
+        showToast("Reset Failed", err.message, "alert");
+      });
+    };
+
+    // Dismiss active alerts until count increases further
+    window.dismissAlerts = function() {
+      for (const id in restroomsData) {
+        if (restroomsData[id].redCount >= DIRTY_ALERT_THRESHOLD) {
+          dismissedAlerts.set(id, restroomsData[id].redCount);
+        }
+      }
+      dynamicServiceBanner.classList.add("hidden");
+      showToast("Alert Dismissed", "Notifications paused until dirty votes increase.", "info");
+    };
+
+    // --- Simulator Modal Logic ---
+    function updateSimulatorDropdown(nodes) {
+      const select = document.getElementById("simTargetRestroom");
+      const currentVal = select.value;
+      select.innerHTML = nodes.map(n => `<option value="${n.id}">${n.id} (Clean: ${n.greenCount}, Dirty: ${n.redCount}/3, Status: ${n.status})</option>`).join("");
+      if (currentVal && nodes.some(n => n.id === currentVal)) {
+        select.value = currentVal;
+      }
+    }
+
+    const simulatorModal = document.getElementById("simulatorModal");
+    document.getElementById("openSimulatorBtn").onclick = () => {
+      simulatorModal.classList.remove("hidden");
+    };
+    document.getElementById("closeSimulatorModalBtn").onclick = () => {
+      simulatorModal.classList.add("hidden");
+    };
+
+    document.getElementById("simPressCleanBtn").onclick = () => {
+      const selected = document.getElementById("simTargetRestroom").value;
+      if (selected) window.recordPress(selected, "clean");
+    };
+
+    document.getElementById("simPressDirtyBtn").onclick = () => {
+      const selected = document.getElementById("simTargetRestroom").value;
+      if (selected) window.recordPress(selected, "dirty");
+    };
+
+    document.getElementById("simResetSelectedBtn").onclick = () => {
+      const selected = document.getElementById("simTargetRestroom").value;
+      if (selected && confirm(`Reset dirty threshold to 0 for ${selected}?`)) {
+        set(ref(db, `/${selected}/RedCount`), 0);
+        update(ref(db, `/${selected}`), {
+          RedCount: 0,
+          status: "optimal",
+          dispatchedAt: null,
+          lastUpdated: Date.now()
+        }).then(() => {
+          showToast("Counters Cleared", `${selected} dirty count reset to 0`, "clean");
+        });
+      }
+    };
+
+    // Auto Demo Mode Toggle
+    const toggleAutoDemoBtn = document.getElementById("toggleAutoDemoBtn");
+    const autoDemoStatusBadge = document.getElementById("autoDemoStatusBadge");
+
+    toggleAutoDemoBtn.onclick = () => {
+      if (autoDemoInterval) {
+        clearInterval(autoDemoInterval);
+        autoDemoInterval = null;
+        toggleAutoDemoBtn.textContent = "Start Demo";
+        toggleAutoDemoBtn.className = "px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all";
+        autoDemoStatusBadge.textContent = "OFF";
+        autoDemoStatusBadge.className = "text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-400";
+        showToast("Simulator", "Auto-simulation paused", "info");
+      } else {
+        autoDemoInterval = setInterval(() => {
+          const keys = Object.keys(restroomsData);
+          if (keys.length === 0) return;
+          const randomKey = keys[Math.floor(Math.random() * keys.length)];
+          // 80% chance clean, 20% chance dirty
+          const type = Math.random() > 0.25 ? "clean" : "dirty";
+          window.recordPress(randomKey, type);
+        }, 3200);
+
+        toggleAutoDemoBtn.textContent = "Stop Demo";
+        toggleAutoDemoBtn.className = "px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white border border-rose-500 shadow-md transition-all";
+        autoDemoStatusBadge.textContent = "RUNNING";
+        autoDemoStatusBadge.className = "text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 animate-pulse";
+        showToast("Simulator Active", "Emulating customer feedback every 3s", "clean");
+      }
+    };
+
+    // --- Add New Restroom Node Modal Logic ---
+    const addNodeModal = document.getElementById("addNodeModal");
+    document.getElementById("openAddNodeBtn").onclick = () => {
+      addNodeModal.classList.remove("hidden");
+    };
+    document.getElementById("closeAddNodeModalBtn").onclick = () => {
+      addNodeModal.classList.add("hidden");
+    };
+    document.getElementById("cancelAddNodeBtn").onclick = () => {
+      addNodeModal.classList.add("hidden");
+    };
+
+    document.getElementById("addNodeForm").onsubmit = (e) => {
+      e.preventDefault();
+      const rawId = document.getElementById("newNodeId").value.trim();
+      const sanitizedId = rawId.replace(/[.#$\[\]\/ ]/g, "_");
+      const green = parseInt(document.getElementById("newGreenCount").value) || 0;
+      const red = parseInt(document.getElementById("newRedCount").value) || 0;
+
+      if (!sanitizedId) return;
+
+      set(ref(db, `/${sanitizedId}`), {
+        GreenCount: green,
+        RedCount: red,
+        status: red >= DIRTY_ALERT_THRESHOLD ? "needs_attention" : "optimal",
+        created: Date.now(),
+        lastUpdated: Date.now()
+      }).then(() => {
+        showToast("Node Registered", `${sanitizedId} added to Firebase RTDB`, "clean");
+        document.getElementById("addNodeForm").reset();
+        addNodeModal.classList.add("hidden");
+      }).catch(err => {
+        showToast("Error", err.message, "alert");
+      });
+    };
+
+    // --- ESP32 Code Guide Modal Logic ---
+    const espGuideModal = document.getElementById("espGuideModal");
+    document.getElementById("openEspGuideBtn").onclick = () => espGuideModal.classList.remove("hidden");
+    document.getElementById("closeEspGuideModalBtn").onclick = () => espGuideModal.classList.add("hidden");
+    document.getElementById("closeEspGuideModalBtn2").onclick = () => espGuideModal.classList.add("hidden");
+
+    document.getElementById("copyArduinoCodeBtn").onclick = () => {
+      const code = document.getElementById("arduinoCodeSnippet").innerText;
+      navigator.clipboard.writeText(code).then(() => {
+        const text = document.getElementById("copyBtnText");
+        text.textContent = "Copied!";
+        setTimeout(() => text.textContent = "Copy Code", 2000);
+        showToast("Copied", "Arduino C++ sketch copied to clipboard", "clean");
+      });
+    };
+
+    // --- Sound Toggle Logic ---
+    const soundToggleBtn = document.getElementById("soundToggleBtn");
+    const soundIconOn = document.getElementById("soundIconOn");
+    const soundIconOff = document.getElementById("soundIconOff");
+    const soundLabel = document.getElementById("soundLabel");
+
+    soundToggleBtn.onclick = () => {
+      soundEnabled = !soundEnabled;
+      if (soundEnabled) {
+        soundIconOn.classList.remove("hidden");
+        soundIconOff.classList.add("hidden");
+        soundLabel.textContent = "Sound On";
+        initAudio();
+        playSound("clean");
+      } else {
+        soundIconOn.classList.add("hidden");
+        soundIconOff.classList.remove("hidden");
+        soundLabel.textContent = "Muted";
+      }
+    };
+
+    // --- Search, Filter & Sort Event Listeners ---
+    document.getElementById("restroomSearchInput").oninput = (e) => {
+      currentSearchTerm = e.target.value;
+      renderDashboard();
+    };
+
+    document.querySelectorAll(".filter-btn").forEach(btn => {
+      btn.onclick = () => {
+        document.querySelectorAll(".filter-btn").forEach(b => {
+          b.className = "filter-btn px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800/80 text-slate-400 hover:text-slate-200 border border-slate-700 transition-all";
+        });
+        btn.className = "filter-btn px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 transition-all";
+        currentFilter = btn.getAttribute("data-filter");
+        renderDashboard();
+      };
+    });
+
+    document.getElementById("sortSelect").onchange = (e) => {
+      currentSort = e.target.value;
+      renderDashboard();
+    };
+
+    document.getElementById("clearFeedBtn").onclick = () => {
+      eventHistory.length = 0;
+      renderLiveFeed();
+      showToast("Feed Cleared", "Live activity log has been reset", "info");
+    };
+
+    // --- CSV Export Logic ---
+    document.getElementById("exportCsvBtn").onclick = () => {
+      const nodes = Object.values(restroomsData);
+      if (nodes.length === 0) {
+        showToast("Export Notice", "No restroom data available to export", "info");
+        return;
+      }
+
+      let csv = "Restroom_ID,Clean_Feedbacks,Dirty_Feedbacks,Threshold_Limit,Total_Traffic,Hygiene_Score_Percentage,Status,Timestamp\n";
+      nodes.forEach(n => {
+        const total = n.greenCount + n.redCount;
+        const score = n.redCount === 0 ? 100 : (n.redCount < DIRTY_ALERT_THRESHOLD ? Math.max(85, Math.round((n.greenCount / total) * 100)) : Math.round((n.greenCount / total) * 100));
+        csv += `"${n.id}",${n.greenCount},${n.redCount},${DIRTY_ALERT_THRESHOLD},${total},${score}%,"${n.status}","${new Date().toISOString()}"\n`;
+      });
+
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `HygieSense_Audit_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast("Export Complete", "Audit report saved as CSV", "clean");
+    };
+
+    // Initial greeting toast
+    setTimeout(() => {
+      showToast("HygieSense Ready", "Threshold set to 3 dirty votes. Real-time sync active.", "clean");
+    }, 1000);
+  </script>
+</body>
+</html>
